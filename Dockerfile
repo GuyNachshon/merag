@@ -1,0 +1,161 @@
+# Multi-stage Dockerfile for airgapped deployment
+# Explicitly target Linux AMD64 for cross-platform compatibility
+FROM --platform=linux/amd64 ubuntu:22.04 as base
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV NODE_ENV=production
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    curl \
+    wget \
+    git \
+    build-essential \
+    libssl-dev \
+    libffi-dev \
+    libpq-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    libwebp-dev \
+    libopenjp2-7-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libv4l-dev \
+    libxvidcore-dev \
+    libx264-dev \
+    libatlas-base-dev \
+    gfortran \
+    ffmpeg \
+    libsndfile1 \
+    tesseract-ocr \
+    tesseract-ocr-heb \
+    tesseract-ocr-eng \
+    ninja-build \
+    cmake \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js (using Ubuntu package manager version)
+RUN apt-get update && apt-get install -y nodejs npm \
+    && node --version \
+    && npm --version
+
+# Install Ollama directly (not Docker)
+RUN curl -fsSL https://ollama.ai/install.sh | sh
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements and install Python dependencies
+COPY backend/requirements.txt /app/backend/
+RUN pip3 install --no-cache-dir -r /app/backend/requirements.txt
+
+# Copy package.json and install Node.js dependencies
+COPY frontend/package*.json /app/frontend/
+RUN cd /app/frontend && npm ci
+
+# Copy source code
+COPY backend/ /app/backend/
+COPY frontend/ /app/frontend/
+
+# Copy model download script
+COPY download_models.py /app/download_models.py
+
+# Build frontend assets (skip for now to focus on backend)
+# RUN cd /app/frontend && npm run build
+
+# Stage 2: Model download stage
+FROM base as model-download
+
+# Create model directories
+RUN mkdir -p /app/models/ollama \
+    /app/models/fastembed \
+    /app/models/whisper \
+    /app/models/dots-ocr
+
+# Download and cache ML models
+RUN python3 /app/download_models.py
+
+# Stage 3: Final runtime stage
+FROM base as runtime
+
+# Copy models from download stage
+COPY --from=model-download /app/models /app/models
+
+# Copy source code from base stage
+COPY --from=base /app/backend /app/backend
+# COPY --from=base /app/frontend/dist /app/frontend/dist  # Frontend build skipped for now
+
+# Copy important additional files
+COPY --from=base /app/backend/test_files /app/backend/test_files
+COPY --from=base /app/backend/start.py /app/backend/start.py
+COPY --from=base /app/backend/*.md /app/backend/
+COPY --from=base /app/backend/*.sh /app/backend/
+COPY --from=base /app/backend/test_*.py /app/backend/
+COPY --from=base /app/backend/create_test_*.py /app/backend/
+
+# Set environment variables for model paths
+ENV HF_HOME=/app/models
+ENV TRANSFORMERS_CACHE=/app/models/transformers
+ENV FASTEMBED_CACHE_DIR=/app/models/fastembed
+ENV OLLAMA_HOST=http://localhost:11434
+
+# Create necessary directories
+RUN mkdir -p /app/storage/uploads \
+    /app/storage/qdrant \
+    /app/storage/vector_db \
+    /app/storage/watch \
+    /app/storage/fastembed_cache \
+    /app/frontend/dist
+
+# Create startup script
+RUN echo '#!/bin/bash\n\
+echo "Starting Hebrew Agentic RAG System..."\n\
+\n\
+# Start Ollama in background\n\
+echo "Starting Ollama..."\n\
+ollama serve &\n\
+OLLAMA_PID=$!\n\
+\n\
+# Wait for Ollama to be ready\n\
+sleep 10\n\
+\n\
+# Pull required models if not present\n\
+echo "Ensuring required models are available..."\n\
+ollama pull gpt-oss:20b || true\n\
+\n\
+# Start the FastAPI application\n\
+echo "Starting FastAPI application..."\n\
+cd /app/backend\n\
+python3 main.py\n\
+\n\
+# Cleanup on exit\n\
+trap "kill $OLLAMA_PID" EXIT\n\
+wait\n\
+' > /app/start.sh && chmod +x /app/start.sh
+
+# Expose ports
+EXPOSE 8000 11434
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+
+# Set entrypoint
+ENTRYPOINT ["/app/start.sh"] 
