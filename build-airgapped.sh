@@ -57,7 +57,8 @@ docker rmi ${IMAGE_NAME} 2>/dev/null || true
 
 # Create package directory
 print_status "Creating package directory..."
-mkdir -p ${PACKAGE_NAME
+mkdir -p ${PACKAGE_NAME}
+
 # Build the Docker image
 print_status "Building Docker image for Linux AMD64 (this may take 30-60 minutes)..."
 print_warning "This will download large ML models. Ensure you have stable internet connection."
@@ -154,13 +155,31 @@ print_success "Storage directories created"
 
 # Start the services
 print_status "Starting Hebrew RAG System..."
-docker-compose up -d
-
+docker run -d \
+  --name hebrew-rag-system \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -p 11434:11434 \
+  -v "$(pwd)/storage:/app/storage" \
+  -e API_HOST=0.0.0.0 \
+  -e API_PORT=8000 \
+  -e OLLAMA_HOST=http://localhost:11434 \
+  -e LLM_MODEL=gpt-oss:20b \
+  -e EMBEDDING_MODEL=intfloat/multilingual-e5-large \
+  -e DOTS_OCR_MODEL=rednote-hilab/dots.ocr \
+  -e TESSERACT_LANG=heb+eng \
+  -e CHUNK_SIZE=1000 \
+  -e CHUNK_OVERLAP=200 \
+  -e MAX_FILE_SIZE_MB=100 \
+  -e WATCH_DIRECTORY=/app/storage/watch \
+  -e SCAN_INTERVAL_SECONDS=3600 \
+  -e ENABLE_PERIODIC_INDEXING=true \
+  -e CORS_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:8080 \
+  hebrew-rag-airgapped:latest
 if [ $? -ne 0 ]; then
     print_error "Failed to start services!"
     exit 1
 fi
-
 print_success "Services started successfully"
 
 # Wait for services to be ready
