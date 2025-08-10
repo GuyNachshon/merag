@@ -116,6 +116,7 @@ find_ollama_data() {
         "/var/lib/ollama"
         "/opt/ollama"
         "/usr/local/share/ollama"
+        "/usr/share/ollama/.ollama"
     )
     
     for path in "${OLLAMA_DATA_PATHS[@]}"; do
@@ -134,7 +135,7 @@ find_ollama_data() {
             print_success "Found Ollama data at: $OLLAMA_DATA"
         else
             # Try to find it in system locations
-            SYSTEM_PATHS=("/var/lib/ollama" "/opt/ollama" "/usr/local/share/ollama")
+            SYSTEM_PATHS=("/var/lib/ollama" "/opt/ollama" "/usr/local/share/ollama" "/usr/share/ollama/.ollama")
             for path in "${SYSTEM_PATHS[@]}"; do
                 if [ -d "$path" ]; then
                     OLLAMA_DATA="$path"
