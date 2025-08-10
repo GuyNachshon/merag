@@ -67,8 +67,8 @@ RUN pip install --no-cache-dir packaging>=21.0
 # torch is already installed in the PyTorch image
 RUN pip install --no-cache-dir transformers>=4.40.0 accelerate>=0.20.0
 
-# Install flash-attn separately
-RUN pip install --no-cache-dir flash-attn>=2.0.0
+# Install flash-attn with specific flags for CUDA environment
+RUN pip install --no-cache-dir flash-attn --no-build-isolation --extra-index-url https://download.pytorch.org/whl/cu118
 
 # Install the rest of the requirements (excluding already installed packages)
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
