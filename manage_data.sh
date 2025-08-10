@@ -44,7 +44,7 @@ create_directories() {
     print_success "Storage directories created"
 }
 
-# Copy files to watch directory for automatic processing
+# Copy files to watch directory for automatic processing (smart copy)
 copy_to_watch() {
     if [ $# -eq 0 ]; then
         print_error "Usage: $0 copy-to-watch <source_directory>"
@@ -57,14 +57,83 @@ copy_to_watch() {
         exit 1
     fi
     
-    print_status "Copying files from $SOURCE_DIR to watch directory..."
+    print_status "Smart copying files from $SOURCE_DIR to watch directory..."
     
-    # Copy supported file types
-    find "$SOURCE_DIR" -type f \( -name "*.pdf" -o -name "*.docx" -o -name "*.doc" -o -name "*.txt" -o -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \) -exec cp {} "$WATCH_DIR/" \;
+    # Create tracking file for processed files
+    TRACKING_FILE="$STORAGE_DIR/copy_tracking.json"
     
-    FILE_COUNT=$(find "$WATCH_DIR" -type f | wc -l)
-    print_success "Copied files to watch directory. Total files: $FILE_COUNT"
+    # Initialize tracking file if it doesn't exist
+    if [ ! -f "$TRACKING_FILE" ]; then
+        echo '{}' > "$TRACKING_FILE"
+    fi
+    
+    # Create temporary tracking file
+    TEMP_TRACKING="/tmp/copy_tracking_$$.json"
+    echo '{}' > "$TEMP_TRACKING"
+    
+    # Counters
+    NEW_FILES=0
+    UPDATED_FILES=0
+    SKIPPED_FILES=0
+    
+    # Find and process supported file types
+    while IFS= read -r -d '' file; do
+        # Get file info
+        FILENAME=$(basename "$file")
+        FILE_HASH=$(sha256sum "$file" | cut -d' ' -f1)
+        FILE_MODTIME=$(stat -c %Y "$file")
+        
+        # Check if file exists in tracking
+        if jq -e --arg filename "$FILENAME" '.[$filename]' "$TRACKING_FILE" > /dev/null 2>&1; then
+            # File exists, check if it changed
+            OLD_HASH=$(jq -r --arg filename "$FILENAME" '.[$filename].hash' "$TRACKING_FILE")
+            OLD_MODTIME=$(jq -r --arg filename "$FILENAME" '.[$filename].modtime' "$TRACKING_FILE")
+            
+            if [ "$FILE_HASH" != "$OLD_HASH" ] || [ "$FILE_MODTIME" != "$OLD_MODTIME" ]; then
+                # File changed, copy it
+                cp "$file" "$WATCH_DIR/"
+                echo "  📝 Updated: $FILENAME"
+                ((UPDATED_FILES++))
+            else
+                # File unchanged, skip
+                echo "  ⏭️  Skipped (unchanged): $FILENAME"
+                ((SKIPPED_FILES++))
+            fi
+        else
+            # New file, copy it
+            cp "$file" "$WATCH_DIR/"
+            echo "  ➕ New: $FILENAME"
+            ((NEW_FILES++))
+        fi
+        
+        # Update tracking
+        jq --arg filename "$FILENAME" \
+           --arg hash "$FILE_HASH" \
+           --arg modtime "$FILE_MODTIME" \
+           --arg source "$SOURCE_DIR" \
+           --arg timestamp "$(date -Iseconds)" \
+           '.[$filename] = {"hash": $hash, "modtime": $modtime, "source": $source, "last_copied": $timestamp}' \
+           "$TEMP_TRACKING" > "$TEMP_TRACKING.tmp" && mv "$TEMP_TRACKING.tmp" "$TEMP_TRACKING"
+        
+    done < <(find "$SOURCE_DIR" -type f \( -name "*.pdf" -o -name "*.docx" -o -name "*.doc" -o -name "*.txt" -o -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \) -print0)
+    
+    # Update main tracking file
+    jq -s '.[0] * .[1]' "$TRACKING_FILE" "$TEMP_TRACKING" > "$TRACKING_FILE.tmp" && mv "$TRACKING_FILE.tmp" "$TRACKING_FILE"
+    
+    # Clean up
+    rm -f "$TEMP_TRACKING"
+    
+    # Show summary
+    echo ""
+    print_success "Smart copy completed!"
+    echo "  📊 Summary:"
+    echo "    ➕ New files: $NEW_FILES"
+    echo "    📝 Updated files: $UPDATED_FILES"
+    echo "    ⏭️  Skipped (unchanged): $SKIPPED_FILES"
+    echo "    📁 Total files in watch directory: $(find "$WATCH_DIR" -type f | wc -l)"
+    echo ""
     print_status "Files will be automatically processed by the periodic indexer"
+    print_status "Tracking info saved to: $TRACKING_FILE"
 }
 
 # Create backup of all data
@@ -200,6 +269,30 @@ show_status() {
         echo "  Watch directory: $WATCH_COUNT files"
     fi
     
+    # Copy tracking info
+    echo ""
+    print_status "Copy Tracking:"
+    TRACKING_FILE="$STORAGE_DIR/copy_tracking.json"
+    if [ -f "$TRACKING_FILE" ]; then
+        TRACKED_FILES=$(jq 'length' "$TRACKING_FILE")
+        echo "  Tracked files: $TRACKED_FILES"
+        echo "  Tracking file: $TRACKING_FILE"
+    else
+        echo "  No copy tracking found"
+    fi
+    
+    # Scheduled jobs
+    echo ""
+    print_status "Scheduled Jobs:"
+    SCHEDULE_FILE="$STORAGE_DIR/schedule.json"
+    if [ -f "$SCHEDULE_FILE" ]; then
+        SCHEDULED_COUNT=$(jq 'length' "$SCHEDULE_FILE")
+        echo "  Active schedules: $SCHEDULED_COUNT"
+        echo "  Schedule file: $SCHEDULE_FILE"
+    else
+        echo "  No scheduled jobs found"
+    fi
+    
     # Backups
     echo ""
     print_status "Available Backups:"
@@ -212,6 +305,157 @@ show_status() {
         fi
     else
         echo "  Backup directory not found"
+    fi
+}
+
+# Show detailed tracking information
+show_tracking() {
+    TRACKING_FILE="$STORAGE_DIR/copy_tracking.json"
+    
+    if [ ! -f "$TRACKING_FILE" ]; then
+        print_warning "No copy tracking found"
+        return
+    fi
+    
+    print_status "Copy Tracking Details"
+    echo "========================"
+    
+    # Show summary
+    TOTAL_FILES=$(jq 'length' "$TRACKING_FILE")
+    echo "Total tracked files: $TOTAL_FILES"
+    echo ""
+    
+    # Show recent files (last 10)
+    echo "Recently copied files:"
+    jq -r 'to_entries | sort_by(.value.last_copied) | reverse | .[0:10] | .[] | "  \(.value.last_copied) - \(.key) (from: \(.value.source))"' "$TRACKING_FILE" 2>/dev/null || echo "  No files found"
+    
+    echo ""
+    echo "Source directories:"
+    jq -r 'to_entries | group_by(.value.source) | .[] | "  \(.[0].value.source): \(length) files"' "$TRACKING_FILE" 2>/dev/null || echo "  No source directories found"
+}
+
+# Schedule automatic copying
+schedule_copy() {
+    if [ $# -lt 2 ]; then
+        print_error "Usage: $0 schedule <source_directory> <interval>"
+        print_status "Available intervals: hourly, daily, weekly"
+        exit 1
+    fi
+    
+    SOURCE_DIR="$1"
+    INTERVAL="$2"
+    
+    if [ ! -d "$SOURCE_DIR" ]; then
+        print_error "Source directory not found: $SOURCE_DIR"
+        exit 1
+    fi
+    
+    # Validate interval
+    case "$INTERVAL" in
+        hourly|daily|weekly)
+            ;;
+        *)
+            print_error "Invalid interval: $INTERVAL"
+            print_status "Available intervals: hourly, daily, weekly"
+            exit 1
+            ;;
+    esac
+    
+    print_status "Scheduling automatic copy from $SOURCE_DIR ($INTERVAL)..."
+    
+    # Get absolute paths
+    SCRIPT_PATH=$(realpath "$0")
+    SOURCE_DIR_ABS=$(realpath "$SOURCE_DIR")
+    
+    # Create cron job entry
+    case "$INTERVAL" in
+        hourly)
+            CRON_SCHEDULE="0 * * * *"
+            ;;
+        daily)
+            CRON_SCHEDULE="0 2 * * *"  # 2 AM daily
+            ;;
+        weekly)
+            CRON_SCHEDULE="0 2 * * 0"  # 2 AM Sunday
+            ;;
+    esac
+    
+    # Create cron job
+    CRON_JOB="$CRON_SCHEDULE cd $(pwd) && $SCRIPT_PATH copy-to-watch \"$SOURCE_DIR_ABS\" >> logs/cron.log 2>&1"
+    
+    # Add to crontab
+    (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
+    
+    # Create logs directory
+    mkdir -p logs
+    
+    # Save schedule info
+    SCHEDULE_FILE="$STORAGE_DIR/schedule.json"
+    if [ ! -f "$SCHEDULE_FILE" ]; then
+        echo '{}' > "$SCHEDULE_FILE"
+    fi
+    
+    # Update schedule info
+    jq --arg source "$SOURCE_DIR_ABS" \
+       --arg interval "$INTERVAL" \
+       --arg schedule "$CRON_SCHEDULE" \
+       --arg timestamp "$(date -Iseconds)" \
+       '.[$source] = {"interval": $interval, "schedule": $schedule, "created": $timestamp}' \
+       "$SCHEDULE_FILE" > "$SCHEDULE_FILE.tmp" && mv "$SCHEDULE_FILE.tmp" "$SCHEDULE_FILE"
+    
+    print_success "Scheduled automatic copy: $SOURCE_DIR_ABS ($INTERVAL)"
+    print_status "Cron job added: $CRON_SCHEDULE"
+    print_status "Logs will be written to: logs/cron.log"
+    print_status "Schedule info saved to: $SCHEDULE_FILE"
+}
+
+# Remove scheduled jobs
+unschedule() {
+    print_status "Removing scheduled jobs..."
+    
+    # Get current crontab
+    CURRENT_CRONTAB=$(crontab -l 2>/dev/null || echo "")
+    
+    # Remove our jobs (lines containing the script path)
+    SCRIPT_PATH=$(realpath "$0")
+    NEW_CRONTAB=$(echo "$CURRENT_CRONTAB" | grep -v "$SCRIPT_PATH" || true)
+    
+    # Update crontab
+    echo "$NEW_CRONTAB" | crontab -
+    
+    # Clear schedule info
+    SCHEDULE_FILE="$STORAGE_DIR/schedule.json"
+    if [ -f "$SCHEDULE_FILE" ]; then
+        rm "$SCHEDULE_FILE"
+    fi
+    
+    print_success "All scheduled jobs removed"
+}
+
+# Show scheduled jobs
+show_schedule() {
+    print_status "Scheduled Jobs"
+    echo "==============="
+    
+    # Show crontab entries
+    CURRENT_CRONTAB=$(crontab -l 2>/dev/null || echo "")
+    SCRIPT_PATH=$(realpath "$0")
+    
+    if echo "$CURRENT_CRONTAB" | grep -q "$SCRIPT_PATH"; then
+        echo "Active cron jobs:"
+        echo "$CURRENT_CRONTAB" | grep "$SCRIPT_PATH" | while read -r line; do
+            echo "  $line"
+        done
+    else
+        echo "No active cron jobs found"
+    fi
+    
+    # Show schedule info
+    SCHEDULE_FILE="$STORAGE_DIR/schedule.json"
+    if [ -f "$SCHEDULE_FILE" ]; then
+        echo ""
+        echo "Schedule configuration:"
+        jq -r 'to_entries | .[] | "  \(.key): \(.value.interval) (\(.value.schedule))"' "$SCHEDULE_FILE" 2>/dev/null || echo "  No schedule info found"
     fi
 }
 
@@ -238,6 +482,13 @@ cleanup() {
         fi
     fi
     
+    # Clean old log files (keep last 30 days)
+    if [ -d "logs" ]; then
+        print_status "Cleaning old log files..."
+        find logs -name "*.log" -mtime +30 -delete 2>/dev/null || true
+        print_success "Old log files cleaned"
+    fi
+    
     print_success "Cleanup completed"
 }
 
@@ -250,11 +501,14 @@ show_usage() {
     echo ""
     echo "Commands:"
     echo "  init                    - Initialize storage directories"
-    echo "  copy-to-watch <dir>     - Copy files to watch directory for processing"
+    echo "  copy-to-watch <dir>     - Smart copy files to watch directory (only new/changed)"
     echo "  backup                  - Create backup of all data"
     echo "  restore <backup_name>   - Restore from backup"
     echo "  status                  - Show system status"
+    echo "  tracking                - Show detailed copy tracking information"
     echo "  cleanup                 - Clean up old files and backups"
+    echo "  schedule <dir> <interval> - Schedule automatic copying (e.g., schedule /path/to/docs hourly)"
+    echo "  unschedule              - Remove scheduled jobs"
     echo "  help                    - Show this help message"
     echo ""
     echo "Examples:"
@@ -281,6 +535,15 @@ case "${1:-help}" in
         ;;
     status)
         show_status
+        ;;
+    tracking)
+        show_tracking
+        ;;
+    schedule)
+        schedule_copy "$2" "$3"
+        ;;
+    unschedule)
+        unschedule
         ;;
     cleanup)
         cleanup

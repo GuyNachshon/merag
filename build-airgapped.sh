@@ -96,6 +96,15 @@ print_success "Docker image saved to ${PACKAGE_NAME}/${TAR_FILE}"
 # Copy deployment files
 print_status "Copying deployment files..."
 
+# Copy data management script
+if [ -f "manage_data.sh" ]; then
+    cp manage_data.sh ${PACKAGE_NAME}/
+    chmod +x ${PACKAGE_NAME}/manage_data.sh
+    print_success "Data management script included"
+else
+    print_warning "manage_data.sh not found, skipping"
+fi
+
 # Create deployment script
 cat > ${PACKAGE_NAME}/deploy.sh << 'EOF'
 #!/bin/bash
@@ -265,119 +274,96 @@ chmod +x ${PACKAGE_NAME}/deploy.sh
 cat > ${PACKAGE_NAME}/README.md << 'EOF'
 # Hebrew RAG System - Airgapped Deployment
 
-This package contains a complete Hebrew Agentic RAG (Retrieval-Augmented Generation) system that can run in an airgapped environment without internet access.
-
-## What's Included
-
-- ✅ Complete Docker image with all dependencies
-- ✅ Pre-downloaded ML models (FastEmbed, Whisper, dots.ocr)
-- ✅ Python 3.10 + all required packages
-- ✅ Node.js 20.x + built frontend assets
-- ✅ Tesseract OCR with Hebrew language support
-- ✅ Ollama with Hebrew-capable LLM models
-- ✅ Qdrant vector database
-- ✅ All system dependencies
-
-## System Requirements
-
-- Ubuntu 22.04 or compatible Linux distribution
-- Docker installed and running
-- At least 8GB RAM (16GB recommended)
-- At least 50GB free disk space
-- No internet connection required after deployment
+Complete Hebrew Agentic RAG system for airgapped environments.
 
 ## Quick Start
 
-1. **Extract the package**:
+1. **Extract and deploy**:
    ```bash
    tar -xzf hebrew-rag-airgapped-package.tar.gz
    cd hebrew-rag-airgapped-package
-   ```
-
-2. **Deploy the system**:
-   ```bash
    ./deploy.sh
    ```
 
-3. **Access the application**:
+2. **Access the system**:
    - Web interface: http://localhost:8000
-   - API documentation: http://localhost:8000/docs
-   - Health check: http://localhost:8000/api/v1/health
+   - API docs: http://localhost:8000/docs
 
-## Features
+## Data Management
 
-### Document Processing
-- **Supported formats**: PDF, DOCX, DOC, TXT, PNG, JPG, JPEG
-- **OCR support**: Hebrew and English text extraction
-- **Audio transcription**: Hebrew speech-to-text
-- **Automatic indexing**: Monitor directories for new files
-
-### RAG Capabilities
-- **Hebrew language**: Optimized for Hebrew text processing
-- **Vector search**: Semantic document retrieval
-- **LLM integration**: Local Hebrew-capable language models
-- **Streaming responses**: Real-time AI responses
-
-### Management
-- **Health monitoring**: Built-in health checks
-- **Logging**: Comprehensive logging system
-- **Configuration**: Environment-based configuration
-- **Persistence**: Data survives container restarts
-
-## Configuration
-
-The system can be configured using environment variables in the docker run command:
-
-- `LLM_MODEL`: Language model to use (default: gpt-oss:20b)
-- `EMBEDDING_MODEL`: Embedding model (default: intfloat/multilingual-e5-large)
-- `CHUNK_SIZE`: Document chunk size (default: 1000)
-- `MAX_FILE_SIZE_MB`: Maximum file size (default: 100MB)
-
-## Storage
-
-Data is persisted in the following directories:
-- `./storage/uploads/`: Uploaded documents
-- `./storage/qdrant/`: Vector database
-- `./storage/watch/`: Directory for automatic indexing
-- `./storage/vector_db/`: Additional vector storage
-
-## Troubleshooting
-
-### Check service status:
+### Manual Processing
 ```bash
-docker ps | grep hebrew-rag-system
+# Copy files for processing
+./manage_data.sh copy-to-watch /path/to/documents
+
+# Check status
+./manage_data.sh status
 ```
 
-### View logs:
+### Automated Processing
 ```bash
+# Schedule hourly copying
+./manage_data.sh schedule /path/to/documents hourly
+
+# Schedule daily copying (2 AM)
+./manage_data.sh schedule /path/to/documents daily
+
+# Remove automation
+./manage_data.sh unschedule
+```
+
+### Backup & Restore
+```bash
+# Create backup
+./manage_data.sh backup
+
+# Restore from backup
+./manage_data.sh restore backup-name
+```
+
+## System Management
+
+### Service Control
+```bash
+# Start/stop
+docker start hebrew-rag-system
+docker stop hebrew-rag-system
+
+# View logs
 docker logs -f hebrew-rag-system
-```
 
-### Restart services:
-```bash
+# Restart
 docker restart hebrew-rag-system
 ```
 
-### Stop the system:
+### Health Check
 ```bash
-docker stop hebrew-rag-system
+curl http://localhost:8000/api/v1/health
 ```
 
-### Remove the container:
-```bash
-docker rm hebrew-rag-system
+## Storage Structure
+```
+storage/
+├── uploads/          # User uploaded files
+├── qdrant/          # Vector database
+├── watch/           # Auto-processing directory
+├── vector_db/       # Additional storage
+└── fastembed_cache/ # Model cache
 ```
 
-## Security Notes
+## Features
+- **Hebrew RAG**: Local LLM with Hebrew support
+- **OCR**: Hebrew/English text extraction
+- **Auto-indexing**: Monitor directories for new files
+- **Smart copying**: Only process new/changed files
+- **Backup system**: Complete data protection
+- **Cron automation**: Scheduled file processing
 
-- This system runs completely offline
-- No external network connections are made
-- All data is stored locally
-- No telemetry or external logging
-
-## Support
-
-For issues or questions, check the logs and health endpoints first. The system includes comprehensive error handling and logging.
+## Requirements
+- Linux with Docker
+- 8GB RAM minimum (16GB recommended)
+- 50GB disk space
+- No internet required after deployment
 EOF
 
 # Create .env template
@@ -426,6 +412,7 @@ Package size: $(du -sh ${PACKAGE_NAME} | cut -f1)
 Contents:
 - Docker image with all dependencies and models
 - Deployment scripts
+- Data management script (manage_data.sh)
 - Configuration templates
 - Documentation
 
@@ -437,6 +424,17 @@ Models included:
 - Tesseract: Hebrew + English language packs
 
 Total estimated size: ~60GB
+
+Quick Deploy:
+1. tar -xzf hebrew-rag-airgapped-package.tar.gz
+2. cd hebrew-rag-airgapped-package
+3. ./deploy.sh
+4. Access: http://localhost:8000
+
+Data Management:
+- ./manage_data.sh copy-to-watch /path/to/docs
+- ./manage_data.sh schedule /path/to/docs hourly
+- ./manage_data.sh backup
 EOF
 
 # Create final tar.gz package
