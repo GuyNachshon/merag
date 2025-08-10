@@ -29,7 +29,7 @@ torch>=2.0.0
 qwen-vl-utils>=0.0.11
 accelerate>=0.20.0
 packaging>=21.0
-# flash-attn>=2.0.0  # Optional - can be installed separately if needed
+flash-attn>=2.0.0
 
 # Hebrew Language Processing
 hebrew-tokenizer==2.3.0
