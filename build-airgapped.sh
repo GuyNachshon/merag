@@ -49,6 +49,16 @@ fi
 
 print_success "Docker is available and running"
 
+# Extract Ollama models first
+print_status "Extracting Ollama models..."
+if [ -f "extract_ollama_model.sh" ]; then
+    chmod +x extract_ollama_model.sh
+    ./extract_ollama_model.sh
+    print_success "Ollama models extracted successfully"
+else
+    print_warning "extract_ollama_model.sh not found, skipping Ollama model extraction"
+fi
+
 # Clean up previous builds
 print_status "Cleaning up previous builds..."
 rm -rf ${PACKAGE_NAME}
@@ -63,7 +73,7 @@ mkdir -p ${PACKAGE_NAME}
 print_status "Building Docker image for Linux AMD64 (this may take 30-60 minutes)..."
 print_warning "This will download large ML models. Ensure you have stable internet connection."
 
-docker build --platform linux/amd64 -t ${IMAGE_NAME} . --no-cache
+docker build --platform linux/amd64 -f Dockerfile.airgapped -t ${IMAGE_NAME} . --no-cache
 
 if [ $? -ne 0 ]; then
     print_error "Docker build failed!"
@@ -85,9 +95,6 @@ print_success "Docker image saved to ${PACKAGE_NAME}/${TAR_FILE}"
 
 # Copy deployment files
 print_status "Copying deployment files..."
-
-# Copy docker-compose.yml
-cp docker-compose.yml ${PACKAGE_NAME}/
 
 # Create deployment script
 cat > ${PACKAGE_NAME}/deploy.sh << 'EOF'
@@ -143,6 +150,15 @@ fi
 
 print_success "Docker image loaded successfully"
 
+# Stop and remove existing container if it exists
+print_status "Checking for existing container..."
+if docker ps -a --format 'table {{.Names}}' | grep -q "^hebrew-rag-system$"; then
+    print_status "Stopping existing container..."
+    docker stop hebrew-rag-system 2>/dev/null || true
+    docker rm hebrew-rag-system 2>/dev/null || true
+    print_success "Existing container removed"
+fi
+
 # Create storage directories
 print_status "Creating storage directories..."
 mkdir -p storage/uploads
@@ -152,6 +168,21 @@ mkdir -p storage/watch
 mkdir -p storage/fastembed_cache
 
 print_success "Storage directories created"
+
+# Load Ollama models if available
+if [ -d "ollama-models" ] && [ -f "ollama-models/load_model.sh" ]; then
+    print_status "Loading Ollama models..."
+    if command -v ollama &> /dev/null; then
+        cd ollama-models
+        ./load_model.sh
+        cd ..
+        print_success "Ollama models loaded successfully"
+    else
+        print_warning "Ollama not found on host, models will be loaded in container"
+    fi
+else
+    print_warning "Ollama models not found, LLM features may not work"
+fi
 
 # Start the services
 print_status "Starting Hebrew RAG System..."
@@ -184,10 +215,29 @@ print_success "Services started successfully"
 
 # Wait for services to be ready
 print_status "Waiting for services to be ready..."
-sleep 30
+print_status "This may take 2-3 minutes for first startup..."
 
-# Check health
-print_status "Checking service health..."
+# Wait longer for initialization and retry health check
+for i in {1..12}; do
+    print_status "Health check attempt $i/12..."
+    if curl -f http://localhost:8000/api/v1/health > /dev/null 2>&1; then
+        print_success "Health check passed!"
+        break
+    fi
+    if [ $i -eq 12 ]; then
+        print_error "Service health check failed after 6 minutes!"
+        print_status "Checking logs..."
+        docker logs --tail=50 hebrew-rag-system
+        print_status "Trying to get health response for debugging..."
+        curl -v http://localhost:8000/api/v1/health || true
+        exit 1
+    fi
+    print_status "Service not ready yet, waiting 30 seconds..."
+    sleep 30
+done
+
+# Final health check
+print_status "Performing final health check..."
 if curl -f http://localhost:8000/api/v1/health > /dev/null 2>&1; then
     print_success "Hebrew RAG System is running and healthy!"
     echo ""
@@ -198,12 +248,13 @@ if curl -f http://localhost:8000/api/v1/health > /dev/null 2>&1; then
     echo "📁 Upload documents to: ./storage/watch/"
     echo "💾 Data is stored in: ./storage/"
     echo ""
-    echo "🛑 To stop the system: docker-compose down"
-    echo "📊 To view logs: docker-compose logs -f"
+    echo "🛑 To stop the system: docker stop hebrew-rag-system"
+    echo "📊 To view logs: docker logs -f hebrew-rag-system"
+    echo "🔄 To restart: docker restart hebrew-rag-system"
 else
     print_error "Service health check failed!"
     print_status "Checking logs..."
-    docker-compose logs --tail=50
+    docker logs --tail=50 hebrew-rag-system
     exit 1
 fi
 EOF
@@ -275,7 +326,7 @@ This package contains a complete Hebrew Agentic RAG (Retrieval-Augmented Generat
 
 ## Configuration
 
-The system can be configured using environment variables in `docker-compose.yml`:
+The system can be configured using environment variables in the docker run command:
 
 - `LLM_MODEL`: Language model to use (default: gpt-oss:20b)
 - `EMBEDDING_MODEL`: Embedding model (default: intfloat/multilingual-e5-large)
@@ -294,22 +345,27 @@ Data is persisted in the following directories:
 
 ### Check service status:
 ```bash
-docker-compose ps
+docker ps | grep hebrew-rag-system
 ```
 
 ### View logs:
 ```bash
-docker-compose logs -f
+docker logs -f hebrew-rag-system
 ```
 
 ### Restart services:
 ```bash
-docker-compose restart
+docker restart hebrew-rag-system
 ```
 
 ### Stop the system:
 ```bash
-docker-compose down
+docker stop hebrew-rag-system
+```
+
+### Remove the container:
+```bash
+docker rm hebrew-rag-system
 ```
 
 ## Security Notes
@@ -408,4 +464,4 @@ echo "   1. Copy ${PACKAGE_NAME}.tar.gz to target machine"
 echo "   2. Extract: tar -xzf ${PACKAGE_NAME}.tar.gz"
 echo "   3. Deploy: cd ${PACKAGE_NAME} && ./deploy.sh"
 echo ""
-echo "✅ Package is ready for airgapped deployment!" 
+echo "✅ Package is ready for airgapped deployment!"
