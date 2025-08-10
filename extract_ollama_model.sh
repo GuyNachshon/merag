@@ -164,6 +164,77 @@ extract_model() {
     # Create target directory
     mkdir -p "$TARGET_DIR"
     
+    # Try to find the actual Ollama data directory by checking multiple locations
+    print_status "Searching for Ollama model files..."
+    
+    # Check if the model is in the current user's directory
+    if [ -d "$HOME/.ollama/models" ]; then
+        print_status "Checking $HOME/.ollama/models..."
+        if [ -d "$HOME/.ollama/models/manifests" ]; then
+            MODEL_DIR="$HOME/.ollama/models"
+            print_success "Found models in: $MODEL_DIR"
+        fi
+    fi
+    
+    # Check system-wide locations
+    SYSTEM_LOCATIONS=("/var/lib/ollama" "/opt/ollama" "/usr/local/share/ollama")
+    for loc in "${SYSTEM_LOCATIONS[@]}"; do
+        if [ -d "$loc/models" ]; then
+            print_status "Found system models in: $loc/models"
+            MODEL_DIR="$loc/models"
+            break
+        fi
+    done
+    
+    # Try to find from running Ollama process
+    if pgrep -x "ollama" > /dev/null; then
+        OLLAMA_PID=$(pgrep -x "ollama")
+        print_status "Ollama process found (PID: $OLLAMA_PID)"
+        
+        # Check if we can access the process's files
+        if [ -d "/proc/$OLLAMA_PID/root" ]; then
+            print_status "Checking Ollama process root directory..."
+            # Look for .ollama directory in the process root
+            if [ -d "/proc/$OLLAMA_PID/root/.ollama" ]; then
+                MODEL_DIR="/proc/$OLLAMA_PID/root/.ollama/models"
+                print_success "Found models in process root: $MODEL_DIR"
+            fi
+        fi
+    fi
+    
+    # If we still can't find it, try to create a simple extraction
+    if [ ! -d "$MODEL_DIR/manifests" ]; then
+        print_warning "Could not find Ollama model files in standard locations"
+        print_status "Creating a simple model package..."
+        
+        # Create a basic model structure
+        mkdir -p "$TARGET_DIR/manifests/registry.ollama.ai/library/gpt-oss"
+        mkdir -p "$TARGET_DIR/blobs"
+        
+        # Create a simple manifest file
+        cat > "$TARGET_DIR/manifests/registry.ollama.ai/library/gpt-oss/manifest.json" << 'EOF'
+{
+  "schemaVersion": 2,
+  "config": {
+    "mediaType": "application/vnd.ollama.image.config.v1+json",
+    "digest": "sha256:placeholder",
+    "size": 0
+  },
+  "layers": [
+    {
+      "mediaType": "application/vnd.ollama.image.layer.v1.tar",
+      "digest": "sha256:placeholder",
+      "size": 0
+    }
+  ]
+}
+EOF
+        
+        print_success "Created basic model structure in: $TARGET_DIR/"
+        print_warning "Note: This is a placeholder. The actual model files will need to be copied manually."
+        return
+    fi
+    
     # Find the model files - Ollama uses a specific directory structure
     if [ -d "$MODEL_DIR/manifests/registry.ollama.ai/library/gpt-oss" ]; then
         print_status "Found gpt-oss model in Ollama manifests"
@@ -185,7 +256,11 @@ extract_model() {
     else
         print_warning "Model directory not found in expected location"
         print_status "Available models in $MODEL_DIR/manifests/registry.ollama.ai/library:"
-        ls -la "$MODEL_DIR/manifests/registry.ollama.ai/library/"
+        if [ -d "$MODEL_DIR/manifests/registry.ollama.ai/library" ]; then
+            ls -la "$MODEL_DIR/manifests/registry.ollama.ai/library/"
+        else
+            echo "Directory does not exist"
+        fi
         echo ""
         read -p "Enter the exact model directory name: " MODEL_NAME
         if [ -d "$MODEL_DIR/manifests/registry.ollama.ai/library/$MODEL_NAME" ]; then
