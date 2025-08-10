@@ -11,11 +11,8 @@ ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=/usr/local/cuda/bin:$PATH
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
-# Install system dependencies
+# Install system dependencies (PyTorch image already has Python and CUDA)
 RUN apt-get update && apt-get install -y \
-    python3.10 \
-    python3.10-dev \
-    python3-pip \
     curl \
     wget \
     git \
@@ -66,15 +63,15 @@ WORKDIR /app
 COPY backend/requirements.txt /app/backend/
 
 # Install dependencies in the right order to avoid build issues
-RUN pip3 install --no-cache-dir packaging>=21.0
-RUN pip3 install --no-cache-dir torch>=2.0.0
-RUN pip3 install --no-cache-dir transformers>=4.40.0 accelerate>=0.20.0
+RUN pip install --no-cache-dir packaging>=21.0
+# torch is already installed in the PyTorch image
+RUN pip install --no-cache-dir transformers>=4.40.0 accelerate>=0.20.0
 
 # Install flash-attn separately
-RUN pip3 install --no-cache-dir flash-attn>=2.0.0
+RUN pip install --no-cache-dir flash-attn>=2.0.0
 
 # Install the rest of the requirements (excluding already installed packages)
-RUN pip3 install --no-cache-dir -r /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
 # Copy package.json and install Node.js dependencies
 COPY frontend/package*.json /app/frontend/
