@@ -42,41 +42,76 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-# Check if Docker is running and start it if needed
+# Check if Docker is running and accessible
 if ! docker info &> /dev/null; then
-    print_warning "Docker is not running. Attempting to start Docker..."
+    print_warning "Docker info check failed. Checking Docker status..."
     
-    # Try different methods to start Docker
-    if command -v systemctl &> /dev/null; then
-        print_status "Starting Docker with systemctl..."
-        sudo systemctl start docker
-        sleep 3
-    elif command -v service &> /dev/null; then
-        print_status "Starting Docker with service..."
-        sudo service docker start
-        sleep 3
-    elif command -v dockerd &> /dev/null; then
-        print_status "Starting Docker daemon..."
-        sudo dockerd &
-        sleep 5
+    # Check if Docker daemon is running
+    if pgrep -f dockerd > /dev/null 2>&1; then
+        print_status "Docker daemon is running but not accessible to current user"
+        print_status "This is usually a permission issue. Trying to fix..."
+        
+        # Check if user is in docker group
+        if ! groups | grep -q docker; then
+            print_warning "User is not in docker group. Adding user to docker group..."
+            print_status "You may need to log out and back in for this to take effect"
+            sudo usermod -aG docker $USER
+        fi
+        
+        # Try to start Docker service if not running
+        if ! sudo systemctl is-active --quiet docker; then
+            print_status "Starting Docker service..."
+            sudo systemctl start docker
+            sleep 3
+        fi
+        
+        # Check again
+        if docker info &> /dev/null; then
+            print_success "Docker is now accessible"
+        else
+            print_error "Docker is running but still not accessible"
+            print_status "Try one of these solutions:"
+            print_status "1. Log out and log back in"
+            print_status "2. Run: sudo usermod -aG docker $USER"
+            print_status "3. Run: newgrp docker"
+            print_status "4. Use: sudo docker info (for this session)"
+            exit 1
+        fi
     else
-        print_error "Could not start Docker automatically. Please start Docker manually."
-        print_status "Common commands:"
-        print_status "  - sudo systemctl start docker"
-        print_status "  - sudo service docker start"
-        print_status "  - sudo dockerd &"
-        exit 1
-    fi
-    
-    # Check if Docker started successfully
-    if docker info &> /dev/null; then
-        print_success "Docker started successfully"
-    else
-        print_error "Failed to start Docker. Please start it manually."
-        exit 1
+        print_warning "Docker daemon is not running. Attempting to start Docker..."
+        
+        # Try different methods to start Docker
+        if command -v systemctl &> /dev/null; then
+            print_status "Starting Docker with systemctl..."
+            sudo systemctl start docker
+            sleep 3
+        elif command -v service &> /dev/null; then
+            print_status "Starting Docker with service..."
+            sudo service docker start
+            sleep 3
+        elif command -v dockerd &> /dev/null; then
+            print_status "Starting Docker daemon..."
+            sudo dockerd &
+            sleep 5
+        else
+            print_error "Could not start Docker automatically. Please start Docker manually."
+            print_status "Common commands:"
+            print_status "  - sudo systemctl start docker"
+            print_status "  - sudo service docker start"
+            print_status "  - sudo dockerd &"
+            exit 1
+        fi
+        
+        # Check if Docker started successfully
+        if docker info &> /dev/null; then
+            print_success "Docker started successfully"
+        else
+            print_error "Failed to start Docker. Please start it manually."
+            exit 1
+        fi
     fi
 else
-    print_success "Docker is already running"
+    print_success "Docker is accessible and running"
 fi
 
 # Extract Ollama models first
