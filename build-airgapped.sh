@@ -114,12 +114,45 @@ else
     print_success "Docker is accessible and running"
 fi
 
-# Extract Ollama models first
-print_status "Extracting Ollama models..."
+# Extract Ollama models first (with smart caching)
+print_status "Checking Ollama model extraction..."
 if [ -f "extract_ollama_model.sh" ]; then
     chmod +x extract_ollama_model.sh
-    ./extract_ollama_model.sh
-    print_success "Ollama models extracted successfully"
+    
+    # Check if we need to re-extract the model
+    NEED_EXTRACTION=true
+    
+    if [ -d "ollama-models" ] && [ -f "ollama-gpt-oss-model.tar.gz" ]; then
+        print_status "Checking if model extraction is up to date..."
+        
+        # Find the newest file in the source model directory
+        SOURCE_MODEL_DIR="/usr/share/ollama/.ollama/models"
+        if [ -d "$SOURCE_MODEL_DIR" ]; then
+            NEWEST_SOURCE=$(find "$SOURCE_MODEL_DIR" -type f -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)
+            SOURCE_TIME=$(stat -c %Y "$NEWEST_SOURCE" 2>/dev/null || echo "0")
+        else
+            SOURCE_TIME="0"
+        fi
+        
+        # Get the time of our extracted package
+        PACKAGE_TIME=$(stat -c %Y "ollama-gpt-oss-model.tar.gz" 2>/dev/null || echo "0")
+        
+        if [ "$SOURCE_TIME" -le "$PACKAGE_TIME" ]; then
+            print_success "Model extraction is up to date (package: $(date -d @$PACKAGE_TIME), source: $(date -d @$SOURCE_TIME))"
+            NEED_EXTRACTION=false
+        else
+            print_status "Model source is newer than package, re-extracting..."
+            print_status "Source last modified: $(date -d @$SOURCE_TIME)"
+            print_status "Package last modified: $(date -d @$PACKAGE_TIME)"
+        fi
+    else
+        print_status "No existing model extraction found, extracting..."
+    fi
+    
+    if [ "$NEED_EXTRACTION" = true ]; then
+        ./extract_ollama_model.sh
+        print_success "Ollama models extracted successfully"
+    fi
 else
     print_warning "extract_ollama_model.sh not found, skipping Ollama model extraction"
 fi
