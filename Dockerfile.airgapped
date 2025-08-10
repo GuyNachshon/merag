@@ -134,20 +134,28 @@ RUN mkdir -p /app/storage/uploads \
     /app/storage/fastembed_cache \
     /app/frontend/dist
 
-# Create startup script that doesn't require Ollama
+# Create startup script that installs and starts Ollama
 RUN echo '#!/bin/bash\n\
 echo "Starting Hebrew Agentic RAG System..."\n\
 \n\
-# Check if Ollama is available\n\
-if command -v ollama >/dev/null 2>&1; then\n\
-    echo "Starting Ollama..."\n\
-    ollama serve &\n\
-    OLLAMA_PID=$!\n\
-    sleep 10\n\
-    echo "Ollama started with PID: $OLLAMA_PID"\n\
-else\n\
-    echo "Warning: Ollama not found. LLM features may not work."\n\
-    echo "Please install Ollama separately or ensure it is available in the container."\n\
+# Install Ollama if not already installed\n\
+if ! command -v ollama >/dev/null 2>&1; then\n\
+    echo "Installing Ollama..."\n\
+    curl -fsSL https://ollama.ai/install.sh | sh\n\
+    export PATH=$PATH:/usr/local/bin\n\
+fi\n\
+\n\
+# Start Ollama\n\
+echo "Starting Ollama..."\n\
+ollama serve &\n\
+OLLAMA_PID=$!\n\
+sleep 10\n\
+echo "Ollama started with PID: $OLLAMA_PID"\n\
+\n\
+# Load models if available\n\
+if [ -d "/root/.ollama/models" ]; then\n\
+    echo "Loading pre-installed models..."\n\
+    ollama list || echo "No models loaded yet"\n\
 fi\n\
 \n\
 # Start the FastAPI application\n\
