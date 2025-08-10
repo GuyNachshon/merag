@@ -42,12 +42,42 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+# Check if Docker is running and start it if needed
 if ! docker info &> /dev/null; then
-    print_error "Docker is not running. Please start Docker first."
-    exit 1
+    print_warning "Docker is not running. Attempting to start Docker..."
+    
+    # Try different methods to start Docker
+    if command -v systemctl &> /dev/null; then
+        print_status "Starting Docker with systemctl..."
+        sudo systemctl start docker
+        sleep 3
+    elif command -v service &> /dev/null; then
+        print_status "Starting Docker with service..."
+        sudo service docker start
+        sleep 3
+    elif command -v dockerd &> /dev/null; then
+        print_status "Starting Docker daemon..."
+        sudo dockerd &
+        sleep 5
+    else
+        print_error "Could not start Docker automatically. Please start Docker manually."
+        print_status "Common commands:"
+        print_status "  - sudo systemctl start docker"
+        print_status "  - sudo service docker start"
+        print_status "  - sudo dockerd &"
+        exit 1
+    fi
+    
+    # Check if Docker started successfully
+    if docker info &> /dev/null; then
+        print_success "Docker started successfully"
+    else
+        print_error "Failed to start Docker. Please start it manually."
+        exit 1
+    fi
+else
+    print_success "Docker is already running"
 fi
-
-print_success "Docker is available and running"
 
 # Extract Ollama models first
 print_status "Extracting Ollama models..."
