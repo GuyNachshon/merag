@@ -62,10 +62,15 @@ WORKDIR /app
 # Copy requirements and install Python dependencies
 COPY backend/requirements.txt /app/backend/
 
-# Install packaging first to avoid flash-attn build issues
+# Install dependencies in the right order to avoid build issues
 RUN pip3 install --no-cache-dir packaging>=21.0
+RUN pip3 install --no-cache-dir torch>=2.0.0
+RUN pip3 install --no-cache-dir transformers>=4.40.0 accelerate>=0.20.0
 
-# Install the rest of the requirements
+# Install flash-attn separately
+RUN pip3 install --no-cache-dir flash-attn>=2.0.0
+
+# Install the rest of the requirements (excluding already installed packages)
 RUN pip3 install --no-cache-dir -r /app/backend/requirements.txt
 
 # Copy package.json and install Node.js dependencies
