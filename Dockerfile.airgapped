@@ -63,8 +63,7 @@ WORKDIR /app
 COPY backend/requirements.txt /app/backend/
 RUN pip3 install --no-cache-dir -r /app/backend/requirements.txt
 
-# Install flash-attn separately to avoid build issues
-RUN pip3 install --no-cache-dir flash-attn --no-build-isolation
+# Note: flash-attn is optional and requires CUDA. Dots.OCR will use Tesseract fallback.
 
 # Copy package.json and install Node.js dependencies
 COPY frontend/package*.json /app/frontend/
