@@ -109,14 +109,14 @@ find_ollama_data() {
         fi
     fi
     
-    # Common Ollama data locations
+    # Common Ollama data locations (prioritize system locations that likely have models)
     OLLAMA_DATA_PATHS=(
-        "$HOME/.ollama"
-        "/root/.ollama"
+        "/usr/share/ollama/.ollama"
         "/var/lib/ollama"
         "/opt/ollama"
         "/usr/local/share/ollama"
-        "/usr/share/ollama/.ollama"
+        "/root/.ollama"
+        "$HOME/.ollama"
     )
     
     for path in "${OLLAMA_DATA_PATHS[@]}"; do
@@ -168,17 +168,25 @@ extract_model() {
     # Try to find the actual Ollama data directory by checking multiple locations
     print_status "Searching for Ollama model files..."
     
-    # Check if the model is in the current user's directory
-    if [ -d "$HOME/.ollama/models" ]; then
+    # Check system-wide locations first (where models are likely to be)
+    SYSTEM_LOCATIONS=("/usr/share/ollama/.ollama" "/var/lib/ollama" "/opt/ollama" "/usr/local/share/ollama")
+    for loc in "${SYSTEM_LOCATIONS[@]}"; do
+        if [ -d "$loc/models" ] && [ -d "$loc/models/manifests" ]; then
+            print_status "Found system models in: $loc/models"
+            MODEL_DIR="$loc/models"
+            print_success "Found models in: $MODEL_DIR"
+            break
+        fi
+    done
+    
+    # Check if the model is in the current user's directory (fallback)
+    if [ ! -d "$MODEL_DIR/manifests" ] && [ -d "$HOME/.ollama/models" ]; then
         print_status "Checking $HOME/.ollama/models..."
         if [ -d "$HOME/.ollama/models/manifests" ]; then
             MODEL_DIR="$HOME/.ollama/models"
             print_success "Found models in: $MODEL_DIR"
         fi
     fi
-    
-    # Check system-wide locations
-    SYSTEM_LOCATIONS=("/var/lib/ollama" "/opt/ollama" "/usr/local/share/ollama")
     for loc in "${SYSTEM_LOCATIONS[@]}"; do
         if [ -d "$loc/models" ]; then
             print_status "Found system models in: $loc/models"
