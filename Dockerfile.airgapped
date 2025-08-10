@@ -107,7 +107,6 @@ FROM base as runtime
 
 # Copy models from prep stage
 COPY --from=model-prep /app/models /app/models
-COPY --from=model-prep /root/.ollama /root/.ollama || true
 
 # Copy source code from base stage
 COPY --from=base /app/backend /app/backend
