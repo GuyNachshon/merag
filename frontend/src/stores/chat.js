@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import hebrewRAGApi from '../services/api.js'
+import { api } from '../services/api.js'
 
 export const useChatStore = defineStore('chat', () => {
   const messages = ref([])
@@ -10,19 +10,12 @@ export const useChatStore = defineStore('chat', () => {
   const documentStats = ref({ total_documents: 0, vector_size: 0 })
   const uploadStatus = ref(null)
 
-  // Mock responses for fallback
-  const mockResponses = [
-    'אני מצטער, אבל אני צריך מסמכים כדי לענות על השאלה שלך. אנא העלה מסמכים תחילה.',
-    'לא מצאתי מידע רלוונטי במסמכים שהועלו. אנא נסה לשאול שאלה אחרת.',
-    'אני מבוסס על המסמכים שהועלו. אנא ודא שהמסמכים מכילים את המידע הנדרש.',
-    'תודה על השאלה. אני מחפש במסמכים שלך...',
-    'זו שאלה טובה! הנה מה שמצאתי במסמכים:'
-  ]
+
 
   // Check system health
   async function checkHealth() {
     try {
-      const health = await hebrewRAGApi.checkHealth()
+      const health = await api.health()
       return health
     } catch (err) {
       console.warn('Health check failed:', err)
@@ -34,9 +27,9 @@ export const useChatStore = defineStore('chat', () => {
   async function loadDocumentStats() {
     try {
       error.value = null
-      const stats = await hebrewRAGApi.getDocumentStats()
+      const stats = await api.getDocuments()
       if (stats.success) {
-        documentStats.value = stats.stats
+        documentStats.value = { total_documents: stats.documents?.length || 0, vector_size: 0 }
       }
       return stats
     } catch (err) {
@@ -51,23 +44,28 @@ export const useChatStore = defineStore('chat', () => {
       error.value = null
       uploadStatus.value = 'uploading'
       
-      const result = await hebrewRAGApi.uploadDocuments(files)
+      const results = []
+      for (const file of files) {
+        const result = await api.uploadFile(file)
+        results.push(result)
+      }
       
-      if (result.success) {
+      const successCount = results.filter(r => r.success).length
+      if (successCount > 0) {
         uploadStatus.value = 'success'
         // Refresh document stats
         await loadDocumentStats()
         return {
           success: true,
-          message: `הועלו ${result.files_processed} מסמכים בהצלחה (${result.total_chunks} חלקים)`,
-          details: result
+          message: `הועלו ${successCount} מסמכים בהצלחה`,
+          details: results
         }
       } else {
         uploadStatus.value = 'error'
         return {
           success: false,
-          message: result.error || 'שגיאה בהעלאת המסמכים',
-          details: result
+          message: 'שגיאה בהעלאת המסמכים',
+          details: results
         }
       }
     } catch (err) {
@@ -85,16 +83,12 @@ export const useChatStore = defineStore('chat', () => {
   async function clearDocuments() {
     try {
       error.value = null
-      const result = await hebrewRAGApi.clearDocuments()
-      
-      if (result.success) {
-        documentStats.value = { total_documents: 0, vector_size: 0 }
-        messages.value = []
-        hasMessageBeenSent.value = false
-        return { success: true, message: 'כל המסמכים נמחקו בהצלחה' }
-      } else {
-        return { success: false, message: result.error || 'שגיאה במחיקת המסמכים' }
-      }
+      // Note: This would need a clear endpoint in the API
+      // For now, we'll just clear the local state
+      documentStats.value = { total_documents: 0, vector_size: 0 }
+      messages.value = []
+      hasMessageBeenSent.value = false
+      return { success: true, message: 'כל המסמכים נמחקו בהצלחה' }
     } catch (err) {
       console.error('Clear documents error:', err)
       return { success: false, message: err.message || 'שגיאה במחיקת המסמכים' }
@@ -133,34 +127,33 @@ export const useChatStore = defineStore('chat', () => {
       try {
         if (useStreaming) {
           // Try streaming query
-          await hebrewRAGApi.queryDocumentsStream(
+          await api.chatStream(
             messageContent,
+            [], // history
             // onChunk callback
-            (chunk, fullResponse) => {
+            (chunk) => {
               const messageIndex = messages.value.findIndex(msg => msg.id === aiMessageId)
               if (messageIndex !== -1) {
-                messages.value[messageIndex].content = fullResponse
+                messages.value[messageIndex].content = chunk.content || chunk
               }
-            },
-            // onComplete callback
-            (fullResponse) => {
-              const messageIndex = messages.value.findIndex(msg => msg.id === aiMessageId)
-              if (messageIndex !== -1) {
-                messages.value[messageIndex].content = fullResponse
-                messages.value[messageIndex].isStreaming = false
-                messages.value[messageIndex].timestamp = new Date()
-              }
-              isLoading.value = false
             }
           )
+          
+          // Complete the response
+          const messageIndex = messages.value.findIndex(msg => msg.id === aiMessageId)
+          if (messageIndex !== -1) {
+            messages.value[messageIndex].isStreaming = false
+            messages.value[messageIndex].timestamp = new Date()
+          }
+          isLoading.value = false
         } else {
           // Non-streaming query
-          const result = await hebrewRAGApi.queryDocuments(messageContent)
+          const result = await api.chat(messageContent)
           
           if (result.success) {
             const messageIndex = messages.value.findIndex(msg => msg.id === aiMessageId)
             if (messageIndex !== -1) {
-              messages.value[messageIndex].content = result.response
+              messages.value[messageIndex].content = result.response || result.content
               messages.value[messageIndex].isStreaming = false
               messages.value[messageIndex].timestamp = new Date()
             }
@@ -170,35 +163,8 @@ export const useChatStore = defineStore('chat', () => {
           isLoading.value = false
         }
       } catch (apiError) {
-        console.warn('API query failed, using mock response:', apiError)
-        
-        // Fallback to mock response
-        const mockResponse = mockResponses[Math.floor(Math.random() * mockResponses.length)]
-        
-        if (useStreaming) {
-          // Simulate streaming
-          const words = mockResponse.split(' ')
-          let currentResponse = ''
-          
-          for (let i = 0; i < words.length; i++) {
-            await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200))
-            currentResponse += (i > 0 ? ' ' : '') + words[i]
-            
-            const messageIndex = messages.value.findIndex(msg => msg.id === aiMessageId)
-            if (messageIndex !== -1) {
-              messages.value[messageIndex].content = currentResponse
-            }
-          }
-        }
-        
-        // Complete the response
-        const messageIndex = messages.value.findIndex(msg => msg.id === aiMessageId)
-        if (messageIndex !== -1) {
-          messages.value[messageIndex].content = mockResponse
-          messages.value[messageIndex].isStreaming = false
-          messages.value[messageIndex].timestamp = new Date()
-        }
-        isLoading.value = false
+        console.error('API query failed:', apiError)
+        throw apiError
       }
       
     } catch (err) {

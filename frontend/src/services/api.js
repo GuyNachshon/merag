@@ -1,228 +1,150 @@
-// API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
-
-// Hebrew RAG API Service
-class HebrewRAGApiService {
-  constructor() {
-    this.baseURL = API_BASE_URL
+// API service configuration
+// Since nginx is proxying /api/ requests, we can use relative URLs
+const getApiUrl = () => {
+  // If we're running with nginx proxy, use relative URLs
+  if (typeof window !== 'undefined') {
+    return '';
   }
+  
+  // Fallback to environment variable or default
+  return import.meta.env.VITE_API_URL || '';
+};
 
+const API_BASE_URL = getApiUrl();
+
+console.log('Frontend connecting to backend at:', API_BASE_URL);
+
+export const api = {
   // Health check
-  async checkHealth() {
+  async health() {
     try {
-      const response = await fetch(`${this.baseURL}/health`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data
+      const response = await fetch(`${API_BASE_URL}/api/v1/health`);
+      return response.json();
     } catch (error) {
-      console.error('Error checking health:', error)
-      throw error
+      console.error('Health check failed:', error);
+      return { status: 'error', message: error.message };
     }
-  }
+  },
 
-  // Get document statistics
-  async getDocumentStats() {
+  // Chat endpoints
+  async chat(message, history = []) {
     try {
-      const response = await fetch(`${this.baseURL}/documents/stats`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Error getting document stats:', error)
-      throw error
-    }
-  }
-
-  // Query documents with regular response
-  async queryDocuments(question) {
-    try {
-      const response = await fetch(`${this.baseURL}/query`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          question: question,
-          stream: false
+          message,
+          history,
         }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data
+      });
+      return response.json();
     } catch (error) {
-      console.error('Error querying documents:', error)
-      throw error
+      console.error('Chat request failed:', error);
+      return { success: false, error: error.message };
     }
-  }
+  },
 
-  // Query documents with streaming response
-  async queryDocumentsStream(question, onChunk = null, onComplete = null) {
+  // Streaming chat
+  async chatStream(message, history = [], onChunk) {
     try {
-      const response = await fetch(`${this.baseURL}/query/stream`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          question: question,
-          stream: true
+          message,
+          history,
         }),
-      })
+      });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      // Handle streaming response
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let fullResponse = ''
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
 
       while (true) {
-        const { done, value } = await reader.read()
-        
-        if (done) break
+        const { done, value } = await reader.read();
+        if (done) break;
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() // Keep incomplete line in buffer
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
-            const data = line.slice(6)
+            const data = line.slice(6);
+            if (data === '[DONE]') return;
             
-            if (data === '[DONE]') {
-              if (onComplete) onComplete(fullResponse)
-              return fullResponse
+            try {
+              const parsed = JSON.parse(data);
+              onChunk(parsed);
+            } catch (e) {
+              console.error('Error parsing chunk:', e);
             }
-            
-            if (data.startsWith('[ERROR]')) {
-              const error = data.slice(8)
-              throw new Error(error)
-            }
-
-            // For Hebrew RAG, the chunk is just the text content
-            fullResponse += data
-            if (onChunk) onChunk(data, fullResponse)
           }
         }
       }
-
-      if (onComplete) onComplete(fullResponse)
-      return fullResponse
     } catch (error) {
-      console.error('Error streaming query:', error)
-      throw error
+      console.error('Streaming chat failed:', error);
+      throw error;
     }
-  }
-
-  // Upload documents
-  async uploadDocuments(files) {
-    try {
-      const formData = new FormData()
-      
-      // Add multiple files
-      files.forEach((file, index) => {
-        formData.append('files', file)
-      })
-
-      const response = await fetch(`${this.baseURL}/documents/upload`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Error uploading documents:', error)
-      throw error
-    }
-  }
-
-  // Clear all documents
-  async clearDocuments() {
-    try {
-      const response = await fetch(`${this.baseURL}/documents/clear`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Error clearing documents:', error)
-      throw error
-    }
-  }
-}
-
-// Transcription API methods
-export const transcriptionApi = {
-  async transcribeAudio(file, language = 'he', task = 'transcribe', outputFormat = 'text') {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('language', language)
-    formData.append('task', task)
-    formData.append('output_format', outputFormat)
-
-    const response = await fetch(`${API_BASE_URL}/transcribe/audio`, {
-      method: 'POST',
-      body: formData,
-    })
-
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.detail || 'Transcription failed')
-    }
-
-    return await response.json()
   },
 
-  async getTranscriptionStatus() {
-    const response = await fetch(`${API_BASE_URL}/transcribe/status`)
-    
-    if (!response.ok) {
-      throw new Error('Failed to get transcription status')
+  // File upload
+  async uploadFile(file) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      return response.json();
+    } catch (error) {
+      console.error('File upload failed:', error);
+      return { success: false, error: error.message };
     }
+  },
 
-    return await response.json()
-  }
-}
+  // Transcription
+  async transcribeAudio(file) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
 
-// Create singleton instance
-const hebrewRAGApi = new HebrewRAGApiService()
+      const response = await fetch(`${API_BASE_URL}/api/v1/transcribe`, {
+        method: 'POST',
+        body: formData,
+      });
+      return response.json();
+    } catch (error) {
+      console.error('Transcription failed:', error);
+      return { success: false, error: error.message };
+    }
+  },
 
-export default hebrewRAGApi 
+  // Get documents
+  async getDocuments() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/documents`);
+      return response.json();
+    } catch (error) {
+      console.error('Get documents failed:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Delete document
+  async deleteDocument(docId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/documents/${docId}`, {
+        method: 'DELETE',
+      });
+      return response.json();
+    } catch (error) {
+      console.error('Delete document failed:', error);
+      return { success: false, error: error.message };
+    }
+  },
+}; 

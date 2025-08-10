@@ -203,6 +203,27 @@ else
     print_warning "manage_data.sh not found, skipping"
 fi
 
+# Copy Ollama models
+if [ -d "ollama-models" ]; then
+    cp -r ollama-models ${PACKAGE_NAME}/
+    print_success "Ollama models included in package"
+else
+    print_warning "ollama-models directory not found, skipping"
+fi
+
+# Build and include frontend package
+print_status "Building frontend package for airgapped deployment..."
+if [ -d "frontend" ]; then
+    # Build the frontend package
+    ./build-frontend-package.sh
+    
+    # Copy the frontend package to the airgapped package
+    cp hebrew-rag-frontend-package.tar.gz ${PACKAGE_NAME}/
+    print_success "Frontend package included in airgapped package"
+else
+    print_warning "frontend directory not found, skipping"
+fi
+
 # Create deployment script
 cat > ${PACKAGE_NAME}/deploy.sh << 'EOF'
 #!/bin/bash
