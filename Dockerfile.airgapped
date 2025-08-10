@@ -76,7 +76,7 @@ RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
 # Copy package.json and install Node.js dependencies
 COPY frontend/package*.json /app/frontend/
-RUN cd /app/frontend && npm ci
+RUN cd /app/frontend && npm cache clean --force && npm install
 
 # Copy source code
 COPY backend/ /app/backend/
