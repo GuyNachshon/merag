@@ -63,6 +63,9 @@ WORKDIR /app
 COPY backend/requirements.txt /app/backend/
 RUN pip3 install --no-cache-dir -r /app/backend/requirements.txt
 
+# Install flash-attn separately to avoid build issues
+RUN pip3 install --no-cache-dir flash-attn --no-build-isolation
+
 # Copy package.json and install Node.js dependencies
 COPY frontend/package*.json /app/frontend/
 RUN cd /app/frontend && npm ci
