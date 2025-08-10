@@ -85,7 +85,7 @@ RUN mkdir -p /app/models/ollama \
     /root/.ollama
 
 # Copy pre-downloaded Ollama models (if they exist)
-COPY ollama-models /root/.ollama/ || true
+COPY ollama-models /root/.ollama/
 
 # Copy pre-downloaded models (if they exist)
 COPY --from=base /app/download_models.py /app/download_models.py
