@@ -16,6 +16,18 @@ $color-bg-secondary: #e8e8e8;
 $color-red: #dc2626;
 $color-red-hover: #b91c1c;
 
+// Font
+$font-main: 'SimplerPro', sans-serif;
+$font-size-md: 24px;
+$font-size-sm: 14px;
+$font-weight-light: 300;
+$font-weight-regular: 400;
+$font-weight-bold: 700;
+$font-weight-black: 900;
+
+// Border radius
+$radius-main: 14px;
+
 // Component-specific variables (mapped from existing variables)
 $text-primary: $color-text-primary;
 $text-secondary: $color-text-secondary;
@@ -29,18 +41,6 @@ $success: #28a745;
 $error: $color-red;
 $error-light: #f8d7da;
 $disabled: #6c757d;
-
-// Font
-$font-main: 'SimplerPro', sans-serif;
-$font-size-md: 24px;
-$font-size-sm: 14px;
-$font-weight-light: 300;
-$font-weight-regular: 400;
-$font-weight-bold: 700;
-$font-weight-black: 900;
-
-// Border radius
-$radius-main: 14px;
 
 // Border
 $border-main: 1px solid $color-border;
