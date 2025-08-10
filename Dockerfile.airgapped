@@ -78,6 +78,10 @@ RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 COPY frontend/package*.json /app/frontend/
 RUN cd /app/frontend && npm cache clean --force && npm install
 
+# Build the frontend
+COPY frontend/ /app/frontend/
+RUN cd /app/frontend && npm run build
+
 # Copy source code
 COPY backend/ /app/backend/
 COPY frontend/ /app/frontend/
@@ -110,7 +114,7 @@ COPY --from=model-prep /app/models /app/models
 
 # Copy source code from base stage
 COPY --from=base /app/backend /app/backend
-# COPY --from=base /app/frontend/dist /app/frontend/dist  # Frontend build skipped for now
+COPY --from=base /app/frontend/dist /app/frontend/dist
 
 # Copy important additional files
 COPY --from=base /app/backend/test_files /app/backend/test_files

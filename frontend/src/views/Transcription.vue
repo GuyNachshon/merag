@@ -256,7 +256,7 @@ onMounted(async () => {
   }
   
   &__upload {
-    margin-bottom: calc($spacing * 6));
+    margin-bottom: calc($spacing * 6);
     
     &__area {
       position: relative;
