@@ -16,6 +16,20 @@ $color-bg-secondary: #e8e8e8;
 $color-red: #dc2626;
 $color-red-hover: #b91c1c;
 
+// Component-specific variables (mapped from existing variables)
+$text-primary: $color-text-primary;
+$text-secondary: $color-text-secondary;
+$background-primary: $color-bg;
+$background-secondary: $color-bg-secondary;
+$border-color: $color-border;
+$border-radius: $radius-main;
+$primary: #007bff;
+$primary-dark: #0056b3;
+$success: #28a745;
+$error: $color-red;
+$error-light: #f8d7da;
+$disabled: #6c757d;
+
 // Font
 $font-main: 'SimplerPro', sans-serif;
 $font-size-md: 24px;
