@@ -88,12 +88,34 @@ check_model() {
 find_ollama_data() {
     print_status "Finding Ollama data directory..."
     
+    # Try to get Ollama data directory from Ollama itself
+    if $OLLAMA_BIN --help 2>&1 | grep -q "data"; then
+        OLLAMA_DATA=$($OLLAMA_BIN --help 2>&1 | grep "data" | head -1 | awk '{print $NF}')
+        if [ -d "$OLLAMA_DATA" ]; then
+            print_success "Found Ollama data at: $OLLAMA_DATA"
+            return
+        fi
+    fi
+    
+    # Try to find from running Ollama process
+    if pgrep -x "ollama" > /dev/null; then
+        OLLAMA_PID=$(pgrep -x "ollama")
+        if [ -n "$OLLAMA_PID" ]; then
+            OLLAMA_DATA=$(ps -p "$OLLAMA_PID" -o args= | grep -o -- "--data-dir [^ ]*" | awk '{print $2}')
+            if [ -n "$OLLAMA_DATA" ] && [ -d "$OLLAMA_DATA" ]; then
+                print_success "Found Ollama data at: $OLLAMA_DATA"
+                return
+            fi
+        fi
+    fi
+    
     # Common Ollama data locations
     OLLAMA_DATA_PATHS=(
         "$HOME/.ollama"
         "/root/.ollama"
         "/var/lib/ollama"
         "/opt/ollama"
+        "/usr/local/share/ollama"
     )
     
     for path in "${OLLAMA_DATA_PATHS[@]}"; do
@@ -104,10 +126,31 @@ find_ollama_data() {
         fi
     done
     
+    # If still not found, try to find it in the current user's home
+    if [ -z "$OLLAMA_DATA" ]; then
+        # Check if ollama was installed for current user
+        if [ -d "$HOME/.ollama" ]; then
+            OLLAMA_DATA="$HOME/.ollama"
+            print_success "Found Ollama data at: $OLLAMA_DATA"
+        else
+            # Try to find it in system locations
+            SYSTEM_PATHS=("/var/lib/ollama" "/opt/ollama" "/usr/local/share/ollama")
+            for path in "${SYSTEM_PATHS[@]}"; do
+                if [ -d "$path" ]; then
+                    OLLAMA_DATA="$path"
+                    print_success "Found Ollama data at: $OLLAMA_DATA"
+                    break
+                fi
+            done
+        fi
+    fi
+    
     if [ -z "$OLLAMA_DATA" ]; then
         echo "❌ Ollama data directory not found"
-        echo "Please check where Ollama stores its models"
-        exit 1
+        echo "Trying to create default directory..."
+        OLLAMA_DATA="$HOME/.ollama"
+        mkdir -p "$OLLAMA_DATA/models"
+        print_success "Created Ollama data directory at: $OLLAMA_DATA"
     fi
 }
 
