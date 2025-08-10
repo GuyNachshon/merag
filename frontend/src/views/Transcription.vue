@@ -180,7 +180,7 @@ onMounted(async () => {
 </template>
 
 <style scoped lang="scss">
-@use '../assets/variables.scss' as *;
+@import '../assets/variables.scss';
 
 .transcription-wrapper {
   display: flex;
