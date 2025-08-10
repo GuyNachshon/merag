@@ -1,12 +1,15 @@
 # Multi-stage Dockerfile for airgapped deployment
 # Explicitly target Linux AMD64 for cross-platform compatibility
-FROM --platform=linux/amd64 ubuntu:22.04 as base
+FROM --platform=linux/amd64 nvidia/cuda:12.1-devel-ubuntu22.04 as base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV NODE_ENV=production
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=/usr/local/cuda/bin:$PATH
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
