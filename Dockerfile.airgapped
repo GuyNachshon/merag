@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for airgapped deployment
 # Explicitly target Linux AMD64 for cross-platform compatibility
-FROM --platform=linux/amd64 pytorch/pytorch:2.1.0-cuda12.1-cudnn8-devel as base
+FROM --platform=linux/amd64 pytorch/pytorch:2.2.0-cuda12.1-cudnn8-devel as base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -68,8 +68,8 @@ RUN pip install --no-cache-dir packaging>=21.0
 RUN pip install --no-cache-dir transformers>=4.40.0 accelerate>=0.20.0
 
 # Install flash-attn from pre-built wheel (avoid compilation)
-RUN wget https://github.com/Dao-AILab/flash-attention/releases/download/v2.3.6/flash_attn-2.3.6+cu122torch2.1cxx11abiTRUE-cp310-cp310-linux_x86_64.whl && \
-    pip install --no-dependencies flash_attn-2.3.6+cu122torch2.1cxx11abiTRUE-cp310-cp310-linux_x86_64.whl
+RUN wget https://github.com/Dao-AILab/flash-attention/releases/download/v2.5.8/flash_attn-2.5.8+cu122torch2.2cxx11abiTRUE-cp310-cp310-linux_x86_64.whl && \
+    pip install --no-dependencies flash_attn-2.5.8+cu122torch2.2cxx11abiTRUE-cp310-cp310-linux_x86_64.whl
 
 # Install the rest of the requirements (excluding already installed packages)
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
